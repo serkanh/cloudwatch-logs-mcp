@@ -14,12 +14,17 @@
 - Error handling
 - Response formatting
 - Server runs successfully
+- UV inline scripts for dependency management
+- Comprehensive logging functionality
+- Command-line options for configuration
+- MCP configuration for both Claude Desktop and Cursor (simplified and using python3 directly)
+- Fixed syntax error in UV inline script
 
 ## What's Left to Build
 
-- Testing with Claude Desktop
 - Additional features (pagination, more filtering options)
 - Performance optimizations
+- Support for CloudWatch Insights queries
 
 ## Progress Status
 
@@ -34,4 +39,8 @@
 - [x] Implement error handling
 - [x] Format responses
 - [x] Server runs successfully
-- [ ] Test with Claude Desktop
+- [x] Implement UV inline scripts for dependency management
+- [x] Add comprehensive logging functionality
+- [x] Add command-line options for configuration
+- [x] Configure Claude Desktop to use the MCP server
+- [x] Test with Claude Desktop

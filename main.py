@@ -1,11 +1,20 @@
 #!/usr/bin/env python3
+# /// script
+# dependencies = [
+#   "mcp[cli]>=1.6.0",  # Note: Comma is required between dependencies
+#   "boto3>=1.28.0"
+# ]
+# ///
 """
 CloudWatch Logs MCP Server
 
 An MCP server that provides tools for accessing AWS CloudWatch logs.
 """
 
+import argparse
 import json
+import logging
+import sys
 from datetime import datetime, timedelta
 from typing import Dict, Optional, Any
 
@@ -13,7 +22,28 @@ import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 from mcp.server.fastmcp import FastMCP
 
+# Parse command-line arguments
+parser = argparse.ArgumentParser(description="CloudWatch Logs MCP Server")
+parser.add_argument(
+    "--log-level",
+    choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+    default="INFO",
+    help="Set the logging level (default: INFO)",
+)
+args = parser.parse_args()
+
+# Configure logging
+logging.basicConfig(
+    level=getattr(logging, args.log_level),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger("cloudwatch-logs-mcp")
+
 # Initialize the MCP server
+logger.info(f"Initializing CloudWatch Logs MCP server (log level: {args.log_level})")
 mcp = FastMCP("cloudwatch-logs")
 
 
@@ -39,6 +69,7 @@ async def list_groups(
     Returns:
         JSON string with the list of log groups
     """
+    logger.info(f"Listing CloudWatch log groups (prefix: {prefix}, region: {region})")
     client = _get_cloudwatch_client(
         region=region,
         access_key_id=accessKeyId,
@@ -90,6 +121,7 @@ async def list_streams(
     Returns:
         JSON string with the list of log streams
     """
+    logger.info(f"Listing CloudWatch log streams for group: {logGroupName} (region: {region})")
     client = _get_cloudwatch_client(
         region=region,
         access_key_id=accessKeyId,
@@ -147,6 +179,11 @@ async def get_logs(
     Returns:
         JSON string with the log events
     """
+    logger.info(
+        f"Getting CloudWatch logs for group: {logGroupName}, stream: {logStreamName}, "
+        f"startTime: {startTime}, endTime: {endTime}, filterPattern: {filterPattern}, "
+        f"region: {region}"
+    )
     client = _get_cloudwatch_client(
         region=region,
         access_key_id=accessKeyId,
@@ -223,11 +260,18 @@ def _get_cloudwatch_client(
     session_kwargs = {}
     if region:
         session_kwargs["region_name"] = region
+        logger.debug(f"Using region: {region}")
+    else:
+        logger.debug("Using default region")
+
     if access_key_id and secret_access_key:
+        logger.debug("Using provided AWS credentials")
         session_kwargs["aws_access_key_id"] = access_key_id
         session_kwargs["aws_secret_access_key"] = secret_access_key
         if session_token:
             session_kwargs["aws_session_token"] = session_token
+    else:
+        logger.debug("Using default AWS credentials")
 
     # Create session and client
     session = boto3.Session(**session_kwargs)
@@ -249,11 +293,16 @@ def _parse_relative_time(time_str: str) -> Optional[int]:
     if not time_str:
         return None
 
+    logger.debug(f"Parsing time string: {time_str}")
+
     # Check if it's an ISO format date
     try:
         dt = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
-        return int(dt.timestamp() * 1000)
+        timestamp = int(dt.timestamp() * 1000)
+        logger.debug(f"Parsed ISO format date: {dt.isoformat()}, timestamp: {timestamp}")
+        return timestamp
     except ValueError:
+        logger.debug(f"Not an ISO format date, trying relative time format")
         pass
 
     # Parse relative time
@@ -263,11 +312,16 @@ def _parse_relative_time(time_str: str) -> Optional[int]:
         unit = time_str[-1]
         seconds = value * units[unit]
         dt = datetime.now() - timedelta(seconds=seconds)
-        return int(dt.timestamp() * 1000)
+        timestamp = int(dt.timestamp() * 1000)
+        logger.debug(f"Parsed relative time: {value}{unit}, timestamp: {timestamp}")
+        return timestamp
 
-    raise ValueError(f"Invalid time format: {time_str}")
+    error_msg = f"Invalid time format: {time_str}"
+    logger.error(error_msg)
+    raise ValueError(error_msg)
 
 
 if __name__ == "__main__":
     # Run the MCP server
+    logger.info("Starting CloudWatch Logs MCP server with stdio transport")
     mcp.run(transport="stdio")
