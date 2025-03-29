@@ -1,12 +1,11 @@
 # CloudWatch Logs MCP Server
 
-An MCP (Model Context Protocol) server that provides tools for accessing AWS CloudWatch logs. This server allows AI assistants to list log groups, list log streams, and read log entries from AWS CloudWatch.
+An MCP (Model Context Protocol) server that provides tools for accessing AWS CloudWatch logs. This server allows AI assistants to list log groups and read log entries from AWS CloudWatch.
 
 ## Features
 
 - List available CloudWatch log groups
-- List log streams within a log group
-- Read log entries from specific log groups and streams
+- Read log entries from specific log groups
 - Support for filtering logs by pattern
 - Support for time-based filtering (absolute and relative times)
 - Customizable AWS region
@@ -63,8 +62,8 @@ Dependencies are defined directly in the main.py file using UV inline scripts:
 ```python
 # /// script
 # dependencies = [
-#   "mcp[cli]>=1.6.0",
-#   "boto3>=1.28.0",
+#   "mcp[cli]>=1.6.0",  # Note: Comma is required between dependencies
+#   "boto3>=1.28.0"
 # ]
 # ///
 ```
@@ -111,7 +110,27 @@ For more detailed logging, you can add the `--log-level` argument:
 }
 ```
 
-If needed, you can also add environment variables for AWS configuration:
+**Important**: You must provide AWS credentials for the server to access CloudWatch logs. Add them as environment variables in your configuration:
+
+```json
+{
+  "mcpServers": {
+    "cloudwatch-logs": {
+      "command": "python3",
+      "args": ["/path/to/cloudwatch-logs-mcp/main.py"],
+      "env": {
+        "AWS_REGION": "us-east-1",
+        "AWS_ACCESS_KEY_ID": "YOUR_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY": "YOUR_SECRET_ACCESS_KEY"
+      },
+      "disabled": false,
+      "autoApprove": []
+    }
+  }
+}
+```
+
+You can also use an AWS profile instead of explicit credentials:
 
 ```json
 {
@@ -155,21 +174,9 @@ Lists available CloudWatch log groups.
 - `secretAccessKey` (optional): AWS secret access key
 - `sessionToken` (optional): AWS session token
 
-### list_streams
-
-Lists available CloudWatch log streams in a log group.
-
-**Parameters:**
-
-- `logGroupName` (required): The name of the log group
-- `region` (optional): AWS region
-- `accessKeyId` (optional): AWS access key ID
-- `secretAccessKey` (optional): AWS secret access key
-- `sessionToken` (optional): AWS session token
-
 ### get_logs
 
-Gets CloudWatch logs from a specific log group and stream.
+Gets CloudWatch logs from a specific log group.
 
 **Parameters:**
 
@@ -203,21 +210,11 @@ The server supports the following authentication methods:
 }
 ```
 
-### Listing Log Streams
-
-```json
-{
-  "logGroupName": "/aws/lambda/my-function",
-  "region": "us-west-2"
-}
-```
-
 ### Getting Logs
 
 ```json
 {
   "logGroupName": "/aws/lambda/my-function",
-  "logStreamName": "2023/03/29/[$LATEST]abcdef123456",
   "startTime": "1h",
   "filterPattern": "ERROR",
   "region": "us-west-2"
@@ -226,26 +223,42 @@ The server supports the following authentication methods:
 
 ## Implementation Details
 
-This server is built using the FastMCP class from the MCP SDK, which provides a simple way to create MCP servers. The server exposes three main tools:
+This server is built using the FastMCP class from the MCP SDK, which provides a simple way to create MCP servers. The server exposes two main tools:
 
 1. `list_groups`: Lists available CloudWatch log groups
-2. `list_streams`: Lists log streams within a log group
-3. `get_logs`: Reads log entries from specific log groups and streams
+2. `get_logs`: Reads log entries from specific log groups
 
 Each tool is implemented as an async function decorated with `@mcp.tool()`. The server uses the boto3 library to interact with the AWS CloudWatch Logs API.
+
+## Architecture
+
+### System Architecture
+
+```mermaid
+flowchart LR
+    Claude[Claude/Cursor] <--> |MCP Protocol| Server[CloudWatch Logs MCP Server]
+    Server <--> |AWS SDK| AWS[AWS CloudWatch Logs]
+
+    subgraph MCP Server
+        FastMCP[FastMCP SDK]
+        Tools[Tools:\nlist_groups\nget_logs]
+        Boto3[Boto3 AWS SDK]
+    end
+
+    FastMCP --- Tools
+    Tools --- Boto3
+```
 
 ## Testing
 
 The server has been successfully tested with both Claude Desktop and Cursor as MCP clients. The following operations have been verified:
 
 - Listing CloudWatch log groups
-- Listing log streams within a log group
-- Retrieving logs from specific log groups and streams
+- Retrieving logs from specific log groups
 
 When testing with your own AWS account, make sure you have the appropriate permissions to access CloudWatch logs. You can test the server by asking Claude or Cursor to:
 
 - "List all CloudWatch log groups"
-- "Show log streams in [log group name]"
 - "Get logs from [log group name] for the last hour"
 
 ## License

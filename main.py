@@ -99,55 +99,6 @@ async def list_groups(
     return json.dumps(formatted_groups, indent=2)
 
 
-@mcp.tool(
-    description="List available CloudWatch log streams in a log group"
-)
-async def list_streams(
-    logGroupName: str,
-    region: Optional[str] = None,
-    accessKeyId: Optional[str] = None,
-    secretAccessKey: Optional[str] = None,
-    sessionToken: Optional[str] = None,
-) -> str:
-    """List available CloudWatch log streams in a log group.
-
-    Args:
-        logGroupName: The name of the log group
-        region: AWS region
-        accessKeyId: AWS access key ID
-        secretAccessKey: AWS secret access key
-        sessionToken: AWS session token
-
-    Returns:
-        JSON string with the list of log streams
-    """
-    logger.info(f"Listing CloudWatch log streams for group: {logGroupName} (region: {region})")
-    client = _get_cloudwatch_client(
-        region=region,
-        access_key_id=accessKeyId,
-        secret_access_key=secretAccessKey,
-        session_token=sessionToken,
-    )
-
-    # List log streams
-    response = client.describe_log_streams(logGroupName=logGroupName)
-    log_streams = response.get("logStreams", [])
-
-    # Format the response
-    formatted_streams = []
-    for stream in log_streams:
-        formatted_streams.append(
-            {
-                "logStreamName": stream.get("logStreamName"),
-                "creationTime": stream.get("creationTime"),
-                "firstEventTimestamp": stream.get("firstEventTimestamp"),
-                "lastEventTimestamp": stream.get("lastEventTimestamp"),
-                "storedBytes": stream.get("storedBytes"),
-            }
-        )
-
-    return json.dumps(formatted_streams, indent=2)
-
 
 @mcp.tool(
     description="Get CloudWatch logs from a specific log group and stream"

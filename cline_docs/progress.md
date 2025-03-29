@@ -8,7 +8,6 @@
 - AWS SDK integration (boto3)
 - CloudWatch logs API integration using FastMCP
 - MCP tool for listing log groups
-- MCP tool for listing log streams
 - MCP tool for reading log entries
 - Region customization
 - Error handling
@@ -19,6 +18,8 @@
 - Command-line options for configuration
 - MCP configuration for both Claude Desktop and Cursor (simplified and using python3 directly)
 - Fixed syntax error in UV inline script
+- Improved documentation for AWS credentials requirement
+- Added Mermaid diagrams for architecture visualization
 
 ## What's Left to Build
 
@@ -33,7 +34,6 @@
 - [x] Add boto3 dependency
 - [x] Implement AWS SDK integration
 - [x] Create MCP tool for listing log groups
-- [x] Create MCP tool for listing log streams
 - [x] Create MCP tool for reading log entries
 - [x] Add region customization
 - [x] Implement error handling

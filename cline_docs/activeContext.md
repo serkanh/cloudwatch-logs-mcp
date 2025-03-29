@@ -3,7 +3,7 @@
 ## Current Work
 
 - Completed implementation of CloudWatch logs MCP server using FastMCP
-- Implemented all core functionality (list groups, list streams, read logs)
+- Implemented all core functionality (list groups, read logs)
 - Added comprehensive documentation
 - Successfully tested server execution with both Claude Desktop and Cursor
 - Fixed MCP configuration for both Claude Desktop and Cursor
@@ -13,10 +13,9 @@
 
 - Project initialization
 - Created Memory Bank documentation
-- Implemented CloudWatch logs MCP server with FastMCP and three main tools:
+- Implemented CloudWatch logs MCP server with FastMCP and two main tools:
   - list_groups: List available CloudWatch log groups
-  - list_streams: List log streams within a log group
-  - get_logs: Read log entries from specific log groups and streams
+  - get_logs: Read log entries from specific log groups
 - Added support for customizable AWS regions
 - Implemented error handling and response formatting
 - Created comprehensive README documentation
@@ -37,6 +36,13 @@
   - Updated all configuration files (Claude Desktop and Cursor)
 - Fixed syntax error in UV inline script in main.py:
   - Added missing comma between dependencies
+- Updated documentation to emphasize AWS credentials requirement:
+  - Added clear instructions about providing AWS credentials in MCP configuration
+  - Included example configuration with AWS access key and secret
+- Added Mermaid diagrams to explain the setup:
+  - System architecture diagram showing components and their relationships
+  - Authentication flow diagram showing the credential handling process
+  - Data flow diagram for retrieving logs from CloudWatch
 
 ## Next Steps
 
