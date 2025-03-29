@@ -11,41 +11,40 @@ CloudWatch Logs MCP Server
 An MCP server that provides tools for accessing AWS CloudWatch logs.
 """
 
-import argparse
 import json
 import logging
 import sys
 from datetime import datetime, timedelta
 from typing import Dict, Optional, Any
+import traceback
+import os
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 from mcp.server.fastmcp import FastMCP
 
-# Parse command-line arguments
-parser = argparse.ArgumentParser(description="CloudWatch Logs MCP Server")
-parser.add_argument(
-    "--log-level",
-    choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-    default="INFO",
-    help="Set the logging level (default: INFO)",
-)
-args = parser.parse_args()
-
-# Configure logging
+# Configure logging to stderr
 logging.basicConfig(
-    level=getattr(logging, args.log_level),
+    level=logging.INFO,  # Default to INFO level
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.StreamHandler(sys.stdout)
+        logging.StreamHandler(sys.stderr)
     ]
 )
 logger = logging.getLogger("cloudwatch-logs-mcp")
 
 # Initialize the MCP server
-logger.info(f"Initializing CloudWatch Logs MCP server (log level: {args.log_level})")
-mcp = FastMCP("cloudwatch-logs")
+logger.info("Starting CloudWatch Logs MCP Server")
+logger.debug(f"Python version: {sys.version}")
+logger.debug(f"Current working directory: {os.getcwd()}")
 
+try:
+    logger.info("Initializing CloudWatch Logs MCP")
+    mcp = FastMCP("cloudwatch-logs")
+    logger.info("MCP server initialized successfully")
+except Exception as e:
+    logger.error(f"Failed to initialize MCP server: {str(e)}", exc_info=True)
+    sys.exit(1)
 
 @mcp.tool(
     description="List available CloudWatch log groups"
@@ -57,47 +56,42 @@ async def list_groups(
     secretAccessKey: Optional[str] = None,
     sessionToken: Optional[str] = None,
 ) -> str:
-    """List available CloudWatch log groups.
-
-    Args:
-        prefix: Log group name prefix
-        region: AWS region
-        accessKeyId: AWS access key ID
-        secretAccessKey: AWS secret access key
-        sessionToken: AWS session token
-
-    Returns:
-        JSON string with the list of log groups
-    """
-    logger.info(f"Listing CloudWatch log groups (prefix: {prefix}, region: {region})")
-    client = _get_cloudwatch_client(
-        region=region,
-        access_key_id=accessKeyId,
-        secret_access_key=secretAccessKey,
-        session_token=sessionToken,
-    )
-
-    # List log groups
-    kwargs = {}
-    if prefix:
-        kwargs["logGroupNamePrefix"] = prefix
-
-    response = client.describe_log_groups(**kwargs)
-    log_groups = response.get("logGroups", [])
-
-    # Format the response
-    formatted_groups = []
-    for group in log_groups:
-        formatted_groups.append(
-            {
-                "logGroupName": group.get("logGroupName"),
-                "creationTime": group.get("creationTime"),
-                "storedBytes": group.get("storedBytes"),
-            }
+    """List available CloudWatch log groups."""
+    try:
+        logger.info(f"Listing CloudWatch log groups (prefix: {prefix}, region: {region})")
+        client = _get_cloudwatch_client(
+            region=region,
+            access_key_id=accessKeyId,
+            secret_access_key=secretAccessKey,
+            session_token=sessionToken,
         )
 
-    return json.dumps(formatted_groups, indent=2)
+        # List log groups
+        kwargs = {}
+        if prefix:
+            kwargs["logGroupNamePrefix"] = prefix
 
+        response = client.describe_log_groups(**kwargs)
+        log_groups = response.get("logGroups", [])
+
+        # Format the response
+        formatted_groups = []
+        for group in log_groups:
+            formatted_groups.append(
+                {
+                    "logGroupName": group.get("logGroupName"),
+                    "creationTime": group.get("creationTime"),
+                    "storedBytes": group.get("storedBytes"),
+                }
+            )
+
+        response_json = json.dumps(formatted_groups, ensure_ascii=True)
+        logger.info(f"Returning {len(formatted_groups)} log groups")
+        return response_json
+    except Exception as e:
+        logger.error(f"Error in list_groups: {str(e)}", exc_info=True)
+        # Return error as JSON instead of raising
+        return json.dumps({"error": str(e)}, ensure_ascii=True)
 
 
 @mcp.tool(
@@ -114,80 +108,75 @@ async def get_logs(
     secretAccessKey: Optional[str] = None,
     sessionToken: Optional[str] = None,
 ) -> str:
-    """Get CloudWatch logs from a specific log group and stream.
-
-    Args:
-        logGroupName: The name of the log group
-        logStreamName: The name of the log stream
-        startTime: Start time in ISO format or relative time (e.g., "5m", "1h", "1d")
-        endTime: End time in ISO format
-        filterPattern: Filter pattern for the logs
-        region: AWS region
-        accessKeyId: AWS access key ID
-        secretAccessKey: AWS secret access key
-        sessionToken: AWS session token
-
-    Returns:
-        JSON string with the log events
-    """
-    logger.info(
-        f"Getting CloudWatch logs for group: {logGroupName}, stream: {logStreamName}, "
-        f"startTime: {startTime}, endTime: {endTime}, filterPattern: {filterPattern}, "
-        f"region: {region}"
-    )
-    client = _get_cloudwatch_client(
-        region=region,
-        access_key_id=accessKeyId,
-        secret_access_key=secretAccessKey,
-        session_token=sessionToken,
-    )
-
-    # Parse start and end times
-    start_time_ms = None
-    if startTime:
-        start_time_ms = _parse_relative_time(startTime)
-
-    end_time_ms = None
-    if endTime:
-        end_time_ms = _parse_relative_time(endTime)
-
-    # Get logs
-    kwargs = {
-        "logGroupName": logGroupName,
-    }
-
-    if logStreamName:
-        kwargs["logStreamNames"] = [logStreamName]
-
-    if filterPattern:
-        kwargs["filterPattern"] = filterPattern
-
-    if start_time_ms:
-        kwargs["startTime"] = start_time_ms
-
-    if end_time_ms:
-        kwargs["endTime"] = end_time_ms
-
-    # Use filter_log_events for more flexible querying
-    response = client.filter_log_events(**kwargs)
-    events = response.get("events", [])
-
-    # Format the response
-    formatted_events = []
-    for event in events:
-        timestamp = event.get("timestamp")
-        if timestamp:
-            timestamp = datetime.fromtimestamp(timestamp / 1000).isoformat()
-
-        formatted_events.append(
-            {
-                "timestamp": timestamp,
-                "message": event.get("message"),
-                "logStreamName": event.get("logStreamName"),
-            }
+    """Get CloudWatch logs from a specific log group and stream."""
+    try:
+        logger.info(
+            f"Getting CloudWatch logs for group: {logGroupName}, stream: {logStreamName}, "
+            f"startTime: {startTime}, endTime: {endTime}, filterPattern: {filterPattern}, "
+            f"region: {region}"
+        )
+        client = _get_cloudwatch_client(
+            region=region,
+            access_key_id=accessKeyId,
+            secret_access_key=secretAccessKey,
+            session_token=sessionToken,
         )
 
-    return json.dumps(formatted_events, indent=2)
+        # Parse start and end times
+        start_time_ms = None
+        if startTime:
+            start_time_ms = _parse_relative_time(startTime)
+
+        end_time_ms = None
+        if endTime:
+            end_time_ms = _parse_relative_time(endTime)
+
+        # Get logs
+        kwargs = {
+            "logGroupName": logGroupName,
+        }
+
+        if logStreamName:
+            kwargs["logStreamNames"] = [logStreamName]
+
+        if filterPattern:
+            kwargs["filterPattern"] = filterPattern
+
+        if start_time_ms:
+            kwargs["startTime"] = start_time_ms
+
+        if end_time_ms:
+            kwargs["endTime"] = end_time_ms
+
+        # Use filter_log_events for more flexible querying
+        response = client.filter_log_events(**kwargs)
+        events = response.get("events", [])
+
+        # Format the response
+        formatted_events = []
+        for event in events:
+            timestamp = event.get("timestamp")
+            if timestamp:
+                try:
+                    timestamp = datetime.fromtimestamp(timestamp / 1000).isoformat()
+                except Exception:
+                    timestamp = str(timestamp)
+
+            formatted_events.append(
+                {
+                    "timestamp": timestamp,
+                    "message": event.get("message"),
+                    "logStreamName": event.get("logStreamName"),
+                }
+            )
+
+        response_json = json.dumps(formatted_events, ensure_ascii=True, default=str)
+        logger.info(f"Returning {len(formatted_events)} log events")
+        return response_json
+    except Exception as e:
+        logger.error(f"Error in get_logs: {str(e)}", exc_info=True)
+        # Return error as JSON
+        return json.dumps({"error": str(e)}, ensure_ascii=True)
 
 
 def _get_cloudwatch_client(
@@ -196,17 +185,7 @@ def _get_cloudwatch_client(
     secret_access_key: Optional[str] = None,
     session_token: Optional[str] = None,
 ) -> Any:
-    """Get a CloudWatch Logs client.
-
-    Args:
-        region: AWS region
-        access_key_id: AWS access key ID
-        secret_access_key: AWS secret access key
-        session_token: AWS session token
-
-    Returns:
-        A CloudWatch Logs client
-    """
+    """Get a CloudWatch Logs client."""
     # Create session with credentials if provided
     session_kwargs = {}
     if region:
@@ -225,22 +204,16 @@ def _get_cloudwatch_client(
         logger.debug("Using default AWS credentials")
 
     # Create session and client
-    session = boto3.Session(**session_kwargs)
-    return session.client("logs")
+    try:
+        session = boto3.Session(**session_kwargs)
+        return session.client("logs")
+    except Exception as e:
+        logger.error(f"Error creating CloudWatch client: {str(e)}", exc_info=True)
+        raise
 
 
 def _parse_relative_time(time_str: str) -> Optional[int]:
-    """Parse a relative time string into a timestamp.
-
-    Args:
-        time_str: A relative time string (e.g., "5m", "1h", "1d")
-
-    Returns:
-        The timestamp in milliseconds
-
-    Raises:
-        ValueError: If the time string is invalid
-    """
+    """Parse a relative time string into a timestamp."""
     if not time_str:
         return None
 
@@ -273,6 +246,20 @@ def _parse_relative_time(time_str: str) -> Optional[int]:
 
 
 if __name__ == "__main__":
-    # Run the MCP server
-    logger.info("Starting CloudWatch Logs MCP server with stdio transport")
-    mcp.run(transport="stdio")
+    try:
+        logger.info("Starting main execution block")
+
+        # Skip AWS auth validation for now
+        logger.info("Skipping AWS auth check to avoid early failures")
+
+        # Run the MCP server without any extras
+        logger.info("Starting CloudWatch Logs MCP server with stdio transport")
+
+        # Explicitly handle synchronous initialization
+        logger.info("Running MCP server...")
+        mcp.run(transport="stdio")
+    except KeyboardInterrupt:
+        logger.info("Server stopped by user")
+    except Exception as e:
+        logger.error(f"FATAL ERROR: {str(e)}", exc_info=True)
+        sys.exit(1)
