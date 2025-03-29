@@ -11,7 +11,6 @@ CloudWatch Logs MCP Server
 An MCP server that provides tools for accessing AWS CloudWatch logs.
 """
 
-import argparse
 import json
 import logging
 import sys
@@ -24,28 +23,9 @@ import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 from mcp.server.fastmcp import FastMCP
 
-# Add this near the top of your file to debug module structure
-try:
-    import mcp
-    print(f"MCP module available at: {mcp.__file__}", file=sys.stderr)
-    print(f"MCP version: {getattr(mcp, '__version__', 'unknown')}", file=sys.stderr)
-    print(f"Available mcp submodules: {dir(mcp)}", file=sys.stderr)
-except ImportError as e:
-    print(f"Error importing mcp: {e}", file=sys.stderr)
-
-# Parse command-line arguments
-parser = argparse.ArgumentParser(description="CloudWatch Logs MCP Server")
-parser.add_argument(
-    "--log-level",
-    choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-    default="INFO",
-    help="Set the logging level (default: INFO)",
-)
-args = parser.parse_args()
-
-# Configure simpler logging to just stderr to avoid any file permission issues
+# Configure logging to stderr
 logging.basicConfig(
-    level=getattr(logging, args.log_level),
+    level=logging.INFO,  # Default to INFO level
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stderr)
@@ -53,19 +33,17 @@ logging.basicConfig(
 )
 logger = logging.getLogger("cloudwatch-logs-mcp")
 
-# Add diagnostic output
-print("Starting CloudWatch Logs MCP Server...", file=sys.stderr)
-print(f"Python version: {sys.version}", file=sys.stderr)
-print(f"Current working directory: {os.getcwd()}", file=sys.stderr)
+# Initialize the MCP server
+logger.info("Starting CloudWatch Logs MCP Server")
+logger.debug(f"Python version: {sys.version}")
+logger.debug(f"Current working directory: {os.getcwd()}")
 
 try:
-    # Initialize the MCP server
     logger.info("Initializing CloudWatch Logs MCP")
     mcp = FastMCP("cloudwatch-logs")
-    print("MCP server initialized successfully", file=sys.stderr)
+    logger.info("MCP server initialized successfully")
 except Exception as e:
-    print(f"Failed to initialize MCP server: {str(e)}", file=sys.stderr)
-    traceback.print_exc(file=sys.stderr)
+    logger.error(f"Failed to initialize MCP server: {str(e)}", exc_info=True)
     sys.exit(1)
 
 @mcp.tool(
@@ -80,7 +58,7 @@ async def list_groups(
 ) -> str:
     """List available CloudWatch log groups."""
     try:
-        print(f"Listing CloudWatch log groups (prefix: {prefix}, region: {region})", file=sys.stderr)
+        logger.info(f"Listing CloudWatch log groups (prefix: {prefix}, region: {region})")
         client = _get_cloudwatch_client(
             region=region,
             access_key_id=accessKeyId,
@@ -108,10 +86,10 @@ async def list_groups(
             )
 
         response_json = json.dumps(formatted_groups, ensure_ascii=True)
-        print(f"Returning {len(formatted_groups)} log groups", file=sys.stderr)
+        logger.info(f"Returning {len(formatted_groups)} log groups")
         return response_json
     except Exception as e:
-        print(f"Error in list_groups: {str(e)}", file=sys.stderr)
+        logger.error(f"Error in list_groups: {str(e)}", exc_info=True)
         # Return error as JSON instead of raising
         return json.dumps({"error": str(e)}, ensure_ascii=True)
 
@@ -132,9 +110,10 @@ async def get_logs(
 ) -> str:
     """Get CloudWatch logs from a specific log group and stream."""
     try:
-        print(
-            f"Getting CloudWatch logs for group: {logGroupName}, stream: {logStreamName}",
-            file=sys.stderr
+        logger.info(
+            f"Getting CloudWatch logs for group: {logGroupName}, stream: {logStreamName}, "
+            f"startTime: {startTime}, endTime: {endTime}, filterPattern: {filterPattern}, "
+            f"region: {region}"
         )
         client = _get_cloudwatch_client(
             region=region,
@@ -191,12 +170,11 @@ async def get_logs(
                 }
             )
 
-        # Be very careful with JSON serialization
         response_json = json.dumps(formatted_events, ensure_ascii=True, default=str)
-        print(f"Returning {len(formatted_events)} log events", file=sys.stderr)
+        logger.info(f"Returning {len(formatted_events)} log events")
         return response_json
     except Exception as e:
-        print(f"Error in get_logs: {str(e)}", file=sys.stderr)
+        logger.error(f"Error in get_logs: {str(e)}", exc_info=True)
         # Return error as JSON
         return json.dumps({"error": str(e)}, ensure_ascii=True)
 
@@ -212,19 +190,25 @@ def _get_cloudwatch_client(
     session_kwargs = {}
     if region:
         session_kwargs["region_name"] = region
+        logger.debug(f"Using region: {region}")
+    else:
+        logger.debug("Using default region")
 
     if access_key_id and secret_access_key:
+        logger.debug("Using provided AWS credentials")
         session_kwargs["aws_access_key_id"] = access_key_id
         session_kwargs["aws_secret_access_key"] = secret_access_key
         if session_token:
             session_kwargs["aws_session_token"] = session_token
+    else:
+        logger.debug("Using default AWS credentials")
 
     # Create session and client
     try:
         session = boto3.Session(**session_kwargs)
         return session.client("logs")
     except Exception as e:
-        print(f"Error creating CloudWatch client: {str(e)}", file=sys.stderr)
+        logger.error(f"Error creating CloudWatch client: {str(e)}", exc_info=True)
         raise
 
 
@@ -233,11 +217,16 @@ def _parse_relative_time(time_str: str) -> Optional[int]:
     if not time_str:
         return None
 
+    logger.debug(f"Parsing time string: {time_str}")
+
     # Check if it's an ISO format date
     try:
         dt = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
-        return int(dt.timestamp() * 1000)
+        timestamp = int(dt.timestamp() * 1000)
+        logger.debug(f"Parsed ISO format date: {dt.isoformat()}, timestamp: {timestamp}")
+        return timestamp
     except ValueError:
+        logger.debug(f"Not an ISO format date, trying relative time format")
         pass
 
     # Parse relative time
@@ -247,27 +236,30 @@ def _parse_relative_time(time_str: str) -> Optional[int]:
         unit = time_str[-1]
         seconds = value * units[unit]
         dt = datetime.now() - timedelta(seconds=seconds)
-        return int(dt.timestamp() * 1000)
+        timestamp = int(dt.timestamp() * 1000)
+        logger.debug(f"Parsed relative time: {value}{unit}, timestamp: {timestamp}")
+        return timestamp
 
-    raise ValueError(f"Invalid time format: {time_str}")
+    error_msg = f"Invalid time format: {time_str}"
+    logger.error(error_msg)
+    raise ValueError(error_msg)
 
 
 if __name__ == "__main__":
     try:
-        print("Starting main execution block", file=sys.stderr)
+        logger.info("Starting main execution block")
 
         # Skip AWS auth validation for now
-        print("Skipping AWS auth check to avoid early failures", file=sys.stderr)
+        logger.info("Skipping AWS auth check to avoid early failures")
 
         # Run the MCP server without any extras
-        print("Starting CloudWatch Logs MCP server with stdio transport", file=sys.stderr)
+        logger.info("Starting CloudWatch Logs MCP server with stdio transport")
 
         # Explicitly handle synchronous initialization
-        print("Running MCP server...", file=sys.stderr)
+        logger.info("Running MCP server...")
         mcp.run(transport="stdio")
     except KeyboardInterrupt:
-        print("Server stopped by user", file=sys.stderr)
+        logger.info("Server stopped by user")
     except Exception as e:
-        print(f"FATAL ERROR: {str(e)}", file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
+        logger.error(f"FATAL ERROR: {str(e)}", exc_info=True)
         sys.exit(1)
